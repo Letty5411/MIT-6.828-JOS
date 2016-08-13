@@ -98,8 +98,22 @@ boot_alloc(uint32_t n)
 	// to a multiple of PGSIZE.
 	//
 	// LAB 2: Your code here.
+	
+	if (n == 0)
+		return (nextfree);
+	if (n < 0)
+		return NULL;
 
-	return NULL;
+	result = nextfree;
+
+	/* should allocate n PGSIZE Bytes space */
+	int num_page = n / PGSIZE + 1;
+	nextfree = ROUNDUP(nextfree,PGSIZE) + num_page * PGSIZE;
+
+	if ((int)nextfree > 4*1024*1024) {
+		panic("Addr is larger than 4G");
+	}
+	return (result);
 }
 
 // Set up a two-level page table:
