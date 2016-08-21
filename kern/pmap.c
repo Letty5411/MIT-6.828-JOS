@@ -110,7 +110,7 @@ boot_alloc(uint32_t n)
 	int num_page = n / PGSIZE + 1;
 	nextfree = ROUNDUP(nextfree,PGSIZE) + num_page * PGSIZE;
 
-	if ((int)nextfree > 4*1024*1024) {
+	if ((int)nextfree > (1<<32)) {
 		panic("Addr is larger than 4G");
 	}
 	return (result);
@@ -135,7 +135,7 @@ mem_init(void)
 	i386_detect_memory();
 
 	// Remove this line when you're ready to test this function.
-	panic("mem_init: This function is not finished\n");
+	// panic("mem_init: This function is not finished\n");
 
 	//////////////////////////////////////////////////////////////////////
 	// create initial page directory.
@@ -148,6 +148,10 @@ mem_init(void)
 	// (For now, you don't have understand the greater purpose of the
 	// following line.)
 
+    // Is the following line used to put UVPT, the virtual address of virtual
+    // page table, to the page table. So, later, you could access this address
+    // through PAGE TABLE MAP machinism.??????????????????????????????
+
 	// Permissions: kernel R, user R
 	kern_pgdir[PDX(UVPT)] = PADDR(kern_pgdir) | PTE_U | PTE_P;
 
@@ -158,7 +162,8 @@ mem_init(void)
 	// array.  'npages' is the number of physical pages in memory.  Use memset
 	// to initialize all fields of each struct PageInfo to 0.
 	// Your code goes here:
-
+    pages = (PageInfo *) boot_alloc(npages * sizeof(PageInfo)); 
+    memset(pages, 0, npages * sizeof(PageInfo));
 
 	//////////////////////////////////////////////////////////////////////
 	// Now that we've allocated the initial kernel data structures, we set
@@ -180,9 +185,11 @@ mem_init(void)
 	// Permissions:
 	//    - the new image at UPAGES -- kernel R, user R
 	//      (ie. perm = PTE_U | PTE_P)
-	//    - pages itself -- kernel RW, user NONE
-	// Your code goes here:
-
+	//    - pages itself -- kernel RW, user NON
+	// Your code goes here
+	kern_pgdir[PDX(UPAGES)] = PADDR(UPAGES) | PTE_U | PTE_P;
+	kern_pgdir[PDX(pages)] = PADDR(pages) | PTE_W | PTE_P;
+    
 	//////////////////////////////////////////////////////////////////////
 	// Use the physical memory that 'bootstack' refers to as the kernel
 	// stack.  The kernel stack grows down from virtual address KSTACKTOP.
@@ -261,12 +268,47 @@ page_init(void)
 	// Change the code to reflect this.
 	// NB: DO NOT actually touch the physical memory corresponding to
 	// free pages!
+
+    // 1) make page 0 as in use.
+    pages[0].pp_ref = 1;
+    pages[0].pp_link = NULL;
+
+
+    // 3) IO hole
+    // Use the IO hole physical address to calculate the physical page start
+    // number and the total number of physical page.
+    int page_start_io_hole = ROUNDUP(IOPHYSMEM, PGSIZE)/PGSIZE - 1;
+    int page_num_io_hole = (EXTPHYSMEM - IOPHYSMEM)/PGSIZE; 
+
+    // 2)
 	size_t i;
-	for (i = 0; i < npages; i++) {
+	for (i = 1; i < page_start_io_hole; i++) {
 		pages[i].pp_ref = 0;
 		pages[i].pp_link = page_free_list;
 		page_free_list = &pages[i];
 	}
+    for (i = page_start_io_hole; i < page_num_io_hole + page_start_io_hole; i++) {
+		pages[i].pp_ref = 1;
+		pages[i].pp_link = NULL;
+    }
+    // Need to change to satisfy 4)
+	for (i = page_num_io_hole + page_start_io_hole; i < npages; i++) {
+		pages[i].pp_ref = 0;
+		pages[i].pp_link = page_free_list;
+		page_free_list = &pages[i];
+	}
+
+}
+
+//
+// Allocates a physical page.  If (alloc_flags & ALLOC_ZERO), fills the entire
+// returned physical page with '\0' bytes.  Does NOT increment the reference
+// count of the page - the caller must do these if necessary (either explicitly
+// or via page_insert).
+//
+        
+    }
+
 }
 
 //
@@ -285,7 +327,17 @@ struct PageInfo *
 page_alloc(int alloc_flags)
 {
 	// Fill this function in
-	return 0;
+
+    if (page_free_list == NULL)
+            return NULL;
+
+    struct PageInfo *result = page_free_list;
+    page_free_list = result->pp_link;
+    result->pp_link = NULL;
+    if (alloc_flags & ALLOC_ZERO) {
+            memset(page2kva(result), 0, PGSIZE);
+    }
+	return result;
 }
 
 //
@@ -298,6 +350,12 @@ page_free(struct PageInfo *pp)
 	// Fill this function in
 	// Hint: You may want to panic if pp->pp_ref is nonzero or
 	// pp->pp_link is not NULL.
+        if (pp->pp_ref != 0 || pp->pp_link != NULL) {
+		    panic("page could not be freed");
+        }
+
+        pp->pp_link = page_free_list;
+        page_free_list = pp;
 }
 
 //

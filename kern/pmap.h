@@ -65,6 +65,15 @@ void	tlb_invalidate(pde_t *pgdir, void *va);
 static inline physaddr_t
 page2pa(struct PageInfo *pp)
 {
+    /*
+       pages is the global array that hold the PageInfo stucture
+       So, pp - pages, is the indext of pp in the pages array.
+       As the physical address is started from 0, and page is aligned at 4096B
+       index <<12(PGSHIFT), will get the start address of the page in pages[index] 
+       
+        e.g.:   0 << 12 = 0
+                1 << 12 = 0x400 = 4KB  
+     */
 	return (pp - pages) << PGSHIFT;
 }
 
@@ -76,6 +85,10 @@ pa2page(physaddr_t pa)
 	return &pages[PGNUM(pa)];
 }
 
+//
+// This function is used to calculate the kernel virtual address
+// according to the PageInfo structure.
+//
 static inline void*
 page2kva(struct PageInfo *pp)
 {
